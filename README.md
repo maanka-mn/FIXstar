@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ast-types-flow
 
-## Getting Started
+Flow types for the Javascript AST. Based off of [benjamn/ast-types](https://github.com/benjamn/ast-types).
 
-First, run the development server:
+## Usage
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+First install `ast-types-flow` via npm, then you can import any of the types
+that are exported.
+
+```javascript
+/* @flow */
+
+import type {Node} from 'ast-types-flow';
+
+function getName(node: Node): string {
+  switch (node.type) {
+    case 'Identifier':
+      return node.name;
+
+    case 'ClassDeclaration':
+      return node.id.name; // Error, id could be null.
+
+    case 'FunctionDeclaration':
+      return node.id.name; // Fine if it's always there.
+
+    case 'FunctionExpression':
+      if (node.id) {
+        return node.id.name; // Can refine id to make sure it exists.
+      } else {
+        return 'Unknown';
+      }
+
+    case 'Literal':
+      return node.name; // Error, Literals don't have names, don't be silly.
+  }
+  return 'Unknown';
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How it works
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+A notion of "extends" is added to the Flow syntax via comments. A transform is
+included that will compile the source code into useful disjoint union types
+based on how the different types extend each other. For example:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```javascript
+type Node = {
+  common: string,
+};
 
-## Learn More
+type Foo = {
+  // extends Node
+  foo: string,
+};
 
-To learn more about Next.js, take a look at the following resources:
+type Bar = {
+  // extends Node
+  bar: number,
+};
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Will be transformed into:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```javascript
+type Node = {
+  type: 'Foo',
+  _Foo: void,
+  common: string,
+  foo: string,
+} | {
+  type: 'Bar',
+  _Bar: void,
+  common: string,
+  bar: number,
+};
 
-## Deploy on Vercel
+type Foo = {
+  type: 'Foo',
+  _Foo: void,
+  common: string,
+  foo: string,
+};
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+type Bar = {
+  type: 'Bar',
+  _Foo: void,
+  common: string,
+  bar: number,
+};
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A few things to note:
+
+1. The type `Node` would more ideally be compiled into `Foo | Bar` but then the
+disjoint union cannot be properly refined. For now we have to duplicate the
+complete definitions.
+2. Each entry in a disjoint union has to be structurally unique or Flow will
+have an error on the definition. That is why the private `_Foo: void` fields
+appear in the types.
