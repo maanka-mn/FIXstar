@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ─── HELPER FUNCTIONS ───
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // ─── CUSTOMERS COLLECTION ───
+    match /customers/{customerId} {
+      allow read, write: if isOwner(customerId);
+    }
+    
+    // ─── WORKERS COLLECTION ───
+    match /workers/{workerId} {
+      // Anyone can read approved worker info to book them
+      allow read: if true;
+      // Workers can create their pending registration and edit their own profiles
+      allow create, update: if isOwner(workerId);
+      // Admin can update worker status (e.g. approve/reject)
+      allow update, delete: if true; // In production, verify admin token/claims
+    }
+    
+    // ─── BOOKINGS COLLECTION ───
+    match /bookings/{bookingId} {
+      // Customers and workers can read their own bookings
+      allow read: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.workerId == request.auth.uid
+      );
+      // Customers can create bookings
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      // Customers and workers can update bookings (e.g. status changes, payment updates)
+      allow update: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.workerId == request.auth.uid
+      );
+      allow delete: if false; // Audit logs should not be deleted
+    }
+    
+    // ─── COMMISSION/SETTINGS DOCUMENT ───
+    match /settings/commission {
+      allow read: if true;
+      allow write: if true; // Admin access
+    }
+  }
+}
